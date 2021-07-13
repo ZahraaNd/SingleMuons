@@ -1,0 +1,349 @@
+#define myTree_cxx
+#define treePP_cxx
+#define treePbPb_cxx
+#include "myTree.h"
+#include <TH2.h>
+#include <TStyle.h>
+#include <TCanvas.h>
+#include "tnp_weight_lowptPbPb.h"
+#include "tnp_weight_lowptpp.h"
+#include "treePP.h"
+#include "treePbPb.h"
+
+double ptBins []= {0,0.5,1,1.5,2,2.5,3.0,3.25,3.5,3.75,4.0,4.25,4.5,4.75,5.0,5.25,5.5,5.75,6.0,6.25,6.5,6.75,7.0,7.5,8,8.5,9,10,11.0,12.0,13.0
+,14,15,17,19,22,25};
+int nPtBins=sizeof(ptBins)/sizeof(double)-1;
+double etaBins[]={0,1.2,1.8,2.1,2.4};
+int nEtaBins=sizeof(ptBins)/sizeof(double)-1;
+double centBins[]={0,10,20};//,30,40,60,80,100,140,200};
+int nCentBins=sizeof(centBins)/sizeof(double)-1;
+
+char histoName[50];    
+int cent;
+double weight;  
+double tnp_weight_trk;
+double tnp_weight;
+double a,b;
+ 
+TObjArray** histoRecoEff=new TObjArray*[nCentBins];
+TObjArray** histoQuaEff=new TObjArray*[nCentBins];
+TObjArray** histoTrigEff=new TObjArray*[nCentBins];
+TObjArray** histoEff=new TObjArray*[nCentBins];
+TObjArray** histoResEff=new TObjArray*[nCentBins];
+  
+TObjArray* myTree::eff (string effType,string Pbp,TH2D* num,TH2D* denom, int z)
+{
+  TObjArray* arrEff=new TObjArray();
+  double BinNb;
+  double sumNum=0;
+  double sumDenom=0;
+  double sumNumErr=0;
+  double sumDenomErr=0;
+  double numErr;
+  double denomErr;
+  
+  //cout<<"before eta loop"<<endl;
+  for(int i=0;i<5;i++){ 
+    char histoName[50];
+    char histoTitle[50];
+    TH1D *histoEff=new TH1D("","",nPtBins,ptBins);
+    
+    if(etaBins[(i+1)%nEtaBins]>etaBins[i]){
+      a=etaBins[i];
+      b=etaBins[(i+1)%nEtaBins];
+    }
+    else{
+      a=etaBins[(i+1)%nEtaBins];
+      b=etaBins[i];
+    }
+    
+    sprintf(histoName,"%s%d%d",effType.c_str(),i,z);
+    sprintf(histoTitle,"%s Efficiency For %s Collisions Over Abs(Eta): %f,%f",effType.c_str(),Pbp.c_str(),a,b);
+    histoEff->SetName(histoName);
+    histoEff->SetTitle(histoTitle);
+    //cout<<"eta range "<<i<<endl;
+    //cout<<"Name:"<<histoEff->GetName()<<endl;
+    //cout<<"Title:"<<histoEff->GetTitle()<<endl;
+    for(int j=0;j<nPtBins;j++){
+      sumNum=0;
+      sumDenom=0;
+      sumNumErr=0;
+      sumDenomErr=0;
+      //cout<<"Pt"<<ptBins[j]<<endl;
+      for(BinNb=num->FindBin(-b,ptBins[j]);BinNb<num->FindBin(-a,ptBins[j]);BinNb++){
+	//cout<<"summing over negative eta range"<<endl;
+	sumNum+=+num->GetBinContent(BinNb);
+	sumDenom+=denom->GetBinContent(BinNb);
+	sumNumErr+=pow(num->GetBinError(BinNb),2);
+	sumDenomErr+=pow(denom->GetBinError(BinNb),2);
+      }
+      for(BinNb=num->FindBin(a,ptBins[j]);BinNb<num->FindBin(b,ptBins[j]);BinNb++){
+	//cout<<"Summing over positive eta range"<<endl;
+	sumNum+=num->GetBinContent(BinNb);
+	sumDenom+=denom->GetBinContent(BinNb);
+	sumNumErr+=pow(num->GetBinError(BinNb),2);
+	sumDenomErr+=pow(denom->GetBinError(BinNb),2);
+      }
+      numErr=sqrt(sumNumErr);
+      denomErr=sqrt(sumDenomErr);
+      //cout<<"filling"<<endl;
+      
+      if((sumNum==0) || (sumDenom==0) || (numErr==0) || (denomErr==0)) continue;
+      histoEff->SetBinContent(histoEff->FindBin(ptBins[j]),sumNum/sumDenom);
+      //cout<<sumNum/sumDenom<<endl;
+      histoEff->SetBinError(histoEff->FindBin(ptBins[j]),sqrt((pow(numErr/sumNum,2)+pow(denomErr/sumDenom,2))*pow(sumNum/sumDenom,2)));
+      //cout<<sqrt((pow(numErr/sumNum,2)+pow(denomErr/sumDenom,2))*pow(sumNum/sumDenom,2))<<endl;        
+    }
+    arrEff->Add(histoEff);
+  }
+  return arrEff;
+};
+
+void myTree::EffCalc()
+{
+  if (fChain == 0) return;
+  if (isAcc) {cout<<"[ERROR] you're trying to make Efficiency with Acceptance trees."<<endl; return;}
+  
+  Long64_t nentries = fChain->GetEntries();
+  Long64_t nbytes = 0, nb = 0;
+  nentries=1000000;
+  
+  int HLT_HIL3Mu5_v1; 
+  HLT_HIL3Mu5_v1=(isPbPb?24:17);
+  cout<<"HLT_HIL3Mu5_v1="<<HLT_HIL3Mu5_v1<<endl;
+    
+  if(!isPbPb) nCentBins=1;
+  cout<<nCentBins<<endl;
+
+  TH2D** histoAcc= new TH2D*[nCentBins];
+  TH2D** histoReco= new TH2D*[nCentBins];
+  TH2D** histoQua= new TH2D*[nCentBins];
+  TH2D** histoTrig= new TH2D*[nCentBins];
+  TH2D** histoRecoTnP= new TH2D*[nCentBins];
+  TH2D** histoQuaTnP= new TH2D*[nCentBins];
+  TH2D** histoTrigTnP= new TH2D*[nCentBins];
+  TH2D** histoResTnP= new TH2D*[nCentBins];
+  
+  
+  TFile* Efficiency= new TFile((isPbPb?"PbPbEff.root":"PPEff.root"),"recreate");
+
+  for(int k=0;k<nCentBins;k++){
+
+    sprintf(histoName,"histoAcc%d",k);
+    histoAcc[k]= new TH2D(histoName, "Accepted muons",48,-2.4,2.4,nPtBins,ptBins);//accepted gen muons
+    sprintf(histoName,"histoReco%d",k);
+    histoReco[k]= new TH2D(histoName, "Reconstructed Muons",48,-2.4,2.4,nPtBins,ptBins);//accepted matched gen muons
+    sprintf(histoName,"histoRecoTnP%d",k);
+    histoRecoTnP[k]= new TH2D(histoName, "Reconstructed Muons",48,-2.4,2.4,nPtBins,ptBins);//accepted matched gen muons
+    sprintf(histoName,"histoQua%d",k);
+    histoQua[k]= new TH2D(histoName, "Muons Passing Quality Cuts",48,-2.4,2.4,nPtBins,ptBins);
+    sprintf(histoName,"histoQuaTnP%d",k);
+    histoQuaTnP[k]= new TH2D(histoName, "Muons Passing Quality Cuts",48,-2.4,2.4,nPtBins,ptBins);
+    sprintf(histoName,"histoTrig%d",k);
+    histoTrig[k]= new TH2D(histoName, "Muons Passing Trigger",48,-2.4,2.4,nPtBins,ptBins);
+    sprintf(histoName,"histoTrigTnP%d",k);
+    histoTrigTnP[k]= new TH2D(histoName, "Muons Passing Trigger",48,-2.4,2.4,nPtBins,ptBins);
+    sprintf(histoName,"histoResTnP%d",k);
+    histoResTnP[k]= new TH2D(histoName, "Total Muon Efficiency With Resolution",48,-2.4,2.4,nPtBins,ptBins);
+
+    for (Long64_t jentry=0; jentry<nentries;jentry++) {
+    
+      if (LoadTree(jentry) < 0) break;
+      nb = fChain->GetEntry(jentry);   nbytes += nb;
+      if(jentry%1000000==0) cout<<"jentry="<<jentry<<"/"<<nentries<<endl;
+      
+      if(isPbPb) {
+	cent = getMCHiBinFromhiHF(hiHF);
+	weight = findNcoll(cent); 
+	if(!(cent>centBins[k] && cent<centBins[k+1])) continue;
+      }
+      else weight=1;
+      
+      for(int iMu=0; iMu<Gen_mu_size; iMu++){
+
+	TLorentzVector* GenMu4mom = (TLorentzVector*) Gen_mu_4mom->At(iMu);
+	
+	if(isPbPb){
+	  tnp_weight_trk=tnp_weight_trk_pbpb(GenMu4mom->Eta(),0);
+	  tnp_weight = tnp_weight_trk_pbpb(GenMu4mom->Eta(),0)*tnp_weight_muid_pbpb(GenMu4mom->Pt(),GenMu4mom->Eta(),0);
+	}
+	else{
+	  auto muGlb = tnp_weight_GlobalMuon_TightAcceptance_pp(GenMu4mom->Pt(),GenMu4mom->Eta());
+	  auto muIdTrg = tnp_weight_HybridSoftID_LooseAcceptance_pp(GenMu4mom->Pt(),GenMu4mom->Eta());
+
+	  tnp_weight_trk= std::get<0>(muGlb);
+	  tnp_weight = std::get<0>(muGlb) * std::get<0>(muIdTrg);
+	}
+	
+	if(!isMuonInAccept2019(GenMu4mom)) continue;
+	histoAcc[k]->Fill(GenMu4mom->Eta(),GenMu4mom->Pt(),weight);
+	if (Gen_mu_whichRec[iMu]<0) continue;
+	TLorentzVector* RecoMu4mom = (TLorentzVector*) Reco_mu_4mom->At(Gen_mu_whichRec[iMu]);
+	if(!(isMuonInAccept2019(RecoMu4mom))) continue;
+	histoReco[k]->Fill(GenMu4mom->Eta(),GenMu4mom->Pt(),weight);
+	histoRecoTnP[k]->Fill(GenMu4mom->Eta(),GenMu4mom->Pt(),weight*tnp_weight_trk);
+	if(!(passQualityCuts2019(Gen_mu_whichRec[iMu]))) continue;
+	histoQua[k]->Fill(GenMu4mom->Eta(),GenMu4mom->Pt(),weight);
+	histoQuaTnP[k]->Fill(GenMu4mom->Eta(),GenMu4mom->Pt(),weight*tnp_weight);
+	isTriggerMatch(Gen_mu_whichRec[iMu],HLT_HIL3Mu5_v1);  
+	if(!(isTriggerMatch(Gen_mu_whichRec[iMu],HLT_HIL3Mu5_v1))) continue;
+	histoTrig[k]->Fill(GenMu4mom->Eta(),GenMu4mom->Pt(),weight);
+	histoTrigTnP[k]->Fill(GenMu4mom->Eta(),GenMu4mom->Pt(),weight*tnp_weight);
+	histoResTnP[k]->Fill(RecoMu4mom->Eta(),RecoMu4mom->Pt(),weight*tnp_weight);
+      }//GenMusizeloop
+    }//jentryloop
+   
+    histoRecoEff[k]=eff("Reco",(isPbPb?"PbPb":"pp"),histoRecoTnP[k],histoAcc[k],k);
+    histoQuaEff[k]=eff("Qua",(isPbPb?"PbPb":"pp"),histoQuaTnP[k],histoReco[k],k);
+    histoTrigEff[k]=eff("Trig",(isPbPb?"PbPb":"pp"),histoTrigTnP[k],histoQua[k],k);
+    histoEff[k]=eff("Tot",(isPbPb?"PbPb":"pp"),histoTrigTnP[k],histoAcc[k],k);
+    histoResEff[k]=eff("Res",(isPbPb?"PbPb":"pp"),histoResTnP[k],histoAcc[k],k);
+
+    histoRecoEff[k]->Write();
+    histoQuaEff[k]->Write();
+    histoTrigEff[k]->Write();
+    histoEff[k]->Write();
+    histoResEff[k]->Write();
+  }
+  Efficiency->Close();
+} 
+
+void myTree::AccCalc()
+{  
+  if (fChain == 0) return;
+  if (!isAcc) {cout<<"[ERROR] you're trying to make Acceptance with Efficiency trees."<<endl; return;}
+
+  Long64_t nentries = fChain->GetEntries();
+  Long64_t nbytes = 0, nb = 0;
+  nentries=1000000;
+  TH2D* histoTot= new TH2D(histoName, "All muons",48,-2.4,2.4,nPtBins,ptBins);
+  TH2D* histoAcc= new TH2D(histoName, "Accepted muons",48,-2.4,2.4,nPtBins,ptBins);
+  
+  TFile* Acceptance= new TFile("Acc.root","recreate");
+  for (Long64_t jentry=0; jentry<nentries;jentry++) {
+    
+    if (LoadTree(jentry) < 0) break;
+    nb = fChain->GetEntry(jentry);   nbytes += nb;
+    if(jentry%1000000==0) cout<<"jentry="<<jentry<<"/"<<nentries<<endl;
+    
+    for(int iMu=0; iMu<Gen_mu_size; iMu++){
+      
+      TLorentzVector* GenMu4mom = (TLorentzVector*) Gen_mu_4mom->At(iMu);
+      histoTot->Fill(GenMu4mom->Eta(),GenMu4mom->Pt());
+      if(!isMuonInAccept2019(GenMu4mom)) continue;
+      histoAcc->Fill(GenMu4mom->Eta(),GenMu4mom->Pt());
+    }
+  }
+  
+  TObjArray* histoAccEff=eff("Acceptance","",histoAcc,histoTot,0);
+  histoAccEff->Write();
+  Acceptance->Close();
+};
+
+void treePP::LoopPP(TH1D* n)
+{
+  //   In a ROOT session, you can do:
+  //      root> .L tree.C
+  //      root> tree t
+  //      root> t.GetEntry(12); // Fill t data members with entry number 12
+  //      root> t.Show();       // Show values of entry 12
+  //      root> t.Show(16);     // Read and show values of entry 16
+  //      root> t.Loop();       // Loop on all entries
+  //
+
+  //     This is the loop skeleton where:
+  //    jentry is the global entry number in the chain
+  //    ientry is the entry number in the current Tree
+  //  Note that the argument to GetEntry must be:
+  //    jentry for TChain::GetEntry
+  //    ientry for TTree::GetEntry and TBranch::GetEntry
+  //
+  //       To read only selected branches, Insert statements like:
+  // METHOD1:
+  //    fChain->SetBranchStatus("*",0);  // disable all branches
+  //    fChain->SetBranchStatus("branchname",1);  // activate branchname
+  // METHOD2: replace line
+  //    fChain->GetEntry(jentry);       //read all branches
+  //by  b_branchname->GetEntry(ientry); //read only this branch
+  if (fChain == 0) return;
+  int etaBin;
+  double eff;
+  Long64_t nentries = fChain->GetEntriesFast();
+  TH1D* jetPt=new TH1D("jetPt","jet pt spectrum without correction",200,0,200);
+  TH1D* jetPtCr=new TH1D("jetPt","jet pt spectrum with correction",200,0,200);
+  Long64_t nbytes = 0, nb = 0;
+  for (Long64_t jentry=0; jentry<nentries;jentry++) {
+    Long64_t ientry = LoadTree(jentry);
+    if (ientry < 0) break;
+    for(int i=0;i<5;i++){
+      a=etaBins[i];
+      b=etaBins[(i+1)%nEtaBins];
+      if(a<mueta<b) etaBin=i;
+    }
+    nb = fChain->GetEntry(jentry);   nbytes += nb;
+    //TH2D* n=histoResEff[0]->FindObject(Form("Res%d%d",0,etaBin));
+    eff=n->GetBinContent(n->FindBin(mupt));
+    jetPt->Fill(jtpt,singleMuWeight);
+    if(eff!=0) jetPtCr->Fill(jtpt,singleMuWeight*1/eff);
+    //if (Cut(ientry) < 0) continue;
+  }
+  TFile* PPjetPt=new TFile("PPjetPt.root","recreate");
+  jetPt->Write();
+  jetPtCr->Write();
+  PPjetPt->Close();
+}
+
+void treePbPb::LoopPbPb(TH1D* n)
+{
+  double centBins[]={0,10,20};//,30,40,60,80,100,140,200};    
+  int nCentBins=sizeof(centBins)/sizeof(double)-1;
+  char histoName[50];
+  double cent;
+  double weight;
+  //   In a ROOT session, you can do:
+  //      root> .L tree.C
+  //      root> tree t
+  //      root> t.GetEntry(12); // Fill t data members with entry number 12
+  //      root> t.Show();       // Show values of entry 12
+  //      root> t.Show(16);     // Read and show values of entry 16
+  //      root> t.Loop();       // Loop on all entries
+  //
+
+  //     This is the loop skeleton where:
+  //    jentry is the global entry number in the chain
+  //    ientry is the entry number in the current Tree
+  //  Note that the argument to GetEntry must be:
+  //    jentry for TChain::GetEntry
+  //    ientry for TTree::GetEntry and TBranch::GetEntry
+  //
+  //       To read only selected branches, Insert statements like:
+  // METHOD1:
+  //    fChain->SetBranchStatus("*",0);  // disable all branches
+  //    fChain->SetBranchStatus("branchname",1);  // activate branchname
+  // METHOD2: replace line
+  //    fChain->GetEntry(jentry);       //read all branches
+  //by  b_branchname->GetEntry(ientry); //read only this branch
+  TH1D** jetPt= new TH1D*[nCentBins];
+  TFile* PbPbjetPt=new TFile("PbPbjetPt.root","recreate");
+  for(int k=0;k<nCentBins;k++){
+    sprintf(histoName,"jetPt%d",k);
+    jetPt[k]= new TH1D(histoName, "jet pt spectrum without correction PbPb",200,0,200);
+    if (fChain == 0) return;
+
+    Long64_t nentries = fChain->GetEntriesFast();
+    Long64_t nbytes = 0, nb = 0;
+    for (Long64_t jentry=0; jentry<nentries;jentry++) {
+      Long64_t ientry = LoadTree(jentry);
+      if (ientry < 0) break;
+      nb = fChain->GetEntry(jentry);   nbytes += nb;
+      
+      // if (Cut(ientry) < 0) continue;
+      cent = getMCHiBinFromhiHF(hiHF);
+      weight = findNcoll(cent);
+      if(!(cent>centBins[k] && cent<centBins[k+1])) continue;
+      jetPt[k]->Fill(jtpt,singleMuWeight*weight);
+    }
+    jetPt[k]->Write();
+  }
+  PbPbjetPt->Close();
+}
