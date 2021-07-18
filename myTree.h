@@ -107,6 +107,11 @@ class myTree {
   Float_t         pthat;
   Bool_t          isPbPb;
   Bool_t          isAcc;
+  //centrality
+  Int_t           hiBin;
+  Float_t         hiHF;
+  Int_t           Centrality;
+  
 
   // List of branches
   TBranch        *b_eventNb;   //!
@@ -185,8 +190,10 @@ class myTree {
   TBranch        *b_Gen_mu_charge;   //!
   TBranch        *b_Gen_mu_4mom;   //!
   TBranch        *b_Gen_mu_whichRec;   //!
+  TBranch        *b_hiBin;
+  TBranch        *b_hiHF;
   TBranch        *b_pthat;
-
+  TBranch        *b_Centrality;
   myTree(Bool_t pbpb, Bool_t acc);
   virtual ~myTree();
   virtual Int_t      Cut(Long64_t entry);
@@ -198,34 +205,15 @@ class myTree {
   virtual Bool_t     isMuonInAccept2019 (TLorentzVector* Muon);
   virtual Bool_t     passQualityCuts2019 (Int_t iRecoMu);
   virtual Bool_t     isTriggerMatch (Int_t iRecoMu, Int_t TriggerBit);
-  virtual TObjArray* eff (string effType,string Pbp,TH2D *num, TH2D *denom);
+  virtual TObjArray* eff (string effType,string Pbp,TH2D *num, TH2D *denom, int j);
   virtual void       AccCalc();
   virtual void       EffCalc();
+  virtual Int_t      getMCHiBinFromhiHF(const Double_t hiHF);
+  virtual Double_t   findNcoll(int hiBin);
 };
 #endif
 
 #ifdef myTree_cxx
-/*myTree::myTree(TTree *tree) : fChain(0) 
-{
-// if parameter tree is not specified (or zero), connect the file
-// used to generate this class and read the Tree.
-// TTree* jTree= NULL;
-  
-if (tree == 0) {
-TFile *f = (TFile*)gROOT->GetListOfFiles()->FindObject("/data_CMS/cms/diab/JpsiJet/MC/pp/prompt/v3/HiForestAOD_ext_merged.root");
-if (!f || !f->IsOpen()) {
-f = new TFile("/data_CMS/cms/diab/JpsiJet/MC/pp/prompt/v3/HiForestAOD_ext_merged.root");
-}
-      
-TDirectory * dir = (TDirectory*)f->Get("/data_CMS/cms/diab/JpsiJet/MC/pp/prompt/v3/HiForestAOD_ext_merged.root:/hionia");
-TDirectory * dir1 = (TDirectory*)f->Get("/data_CMS/cms/diab/JpsiJet/MC/pp/prompt/v3/HiForestAOD_ext_merged.root:/ak3PFJetAnalyzer");
-dir->GetObject("myTree",tree);      
-//dir1->GetObject("t",jTree);
-}
-// tree->AddFriend(jTree);   
-Init(tree);
-}*/
-
 myTree::myTree(Bool_t pbpb, Bool_t acc) : fChain(0)
 {
   TFile* f(0x0);
@@ -242,7 +230,8 @@ myTree::myTree(Bool_t pbpb, Bool_t acc) : fChain(0)
     //pp prompt
     "/data_CMS/cms/diab/JpsiJet/MC/pp/prompt/v3/HiForestAOD_merged.root", 
     //PbPb prompt
-    "/data_CMS/cms/diab/JpsiJet/MC/PbPb/prompt/v7/HiForestAOD_merged.root", 
+    //"/data_CMS/cms/diab/JpsiJet/MC/PbPb/prompt/v7/HiForestAOD_merged.root",
+    "/data_CMS/cms/diab/tnpOniaTree/OniaTree_HINPbPbAutumn18DR-mva98_JPsi_MC_0.root", 
   };
   
   int inin = 0; // inin = input index
@@ -321,6 +310,8 @@ void myTree::Init(TTree *tree)
   fCurrent = -1;
   fChain->SetMakeClass(1);
   
+  
+  if (fChain->GetBranch("Centrality")) fChain->SetBranchAddress("Centrality", &Centrality, &b_Centrality);
   if (fChain->GetBranch("eventNb")) fChain->SetBranchAddress("eventNb", &eventNb, &b_eventNb);
   if (fChain->GetBranch("runNb")) fChain->SetBranchAddress("runNb", &runNb, &b_runNb);
   if (fChain->GetBranch("LS")) fChain->SetBranchAddress("LS", &LS, &b_LS);
@@ -349,31 +340,45 @@ void myTree::Init(TTree *tree)
   if (fChain->GetBranch("Reco_QQ_MassErr")) fChain->SetBranchAddress("Reco_QQ_MassErr", Reco_QQ_MassErr, &b_Reco_QQ_MassErr);
   if (fChain->GetBranch("Reco_QQ_vtx")) fChain->SetBranchAddress("Reco_QQ_vtx", &Reco_QQ_vtx, &b_Reco_QQ_vtx);
   if (fChain->GetBranch("Reco_QQ_Ntrk")) fChain->SetBranchAddress("Reco_QQ_Ntrk", Reco_QQ_Ntrk, &b_Reco_QQ_Ntrk);
-  if (fChain->GetBranch("Reco_QQ_mupl_dxy_muonlessVtx")) fChain->SetBranchAddress("Reco_QQ_mupl_dxy_muonlessVtx", Reco_QQ_mupl_dxy_muonlessVtx, &b_Reco_QQ_mupl_dxy_muonlessVtx);
-  if (fChain->GetBranch("Reco_QQ_mumi_dxy_muonlessVtx")) fChain->SetBranchAddress("Reco_QQ_mumi_dxy_muonlessVtx", Reco_QQ_mumi_dxy_muonlessVtx, &b_Reco_QQ_mumi_dxy_muonlessVtx);
-  if (fChain->GetBranch("Reco_QQ_mupl_dxyErr_muonlessVtx")) fChain->SetBranchAddress("Reco_QQ_mupl_dxyErr_muonlessVtx", Reco_QQ_mupl_dxyErr_muonlessVtx, &b_Reco_QQ_mupl_dxyErr_muonlessVtx);
-  if (fChain->GetBranch("Reco_QQ_mumi_dxyErr_muonlessVtx")) fChain->SetBranchAddress("Reco_QQ_mumi_dxyErr_muonlessVtx", Reco_QQ_mumi_dxyErr_muonlessVtx, &b_Reco_QQ_mumi_dxyErr_muonlessVtx);
-  if (fChain->GetBranch("Reco_QQ_mupl_dz_muonlessVtx")) fChain->SetBranchAddress("Reco_QQ_mupl_dz_muonlessVtx", Reco_QQ_mupl_dz_muonlessVtx, &b_Reco_QQ_mupl_dz_muonlessVtx);
-  if (fChain->GetBranch("Reco_QQ_mumi_dz_muonlessVtx")) fChain->SetBranchAddress("Reco_QQ_mumi_dz_muonlessVtx", Reco_QQ_mumi_dz_muonlessVtx, &b_Reco_QQ_mumi_dz_muonlessVtx);
-  if (fChain->GetBranch("Reco_QQ_mupl_dzErr_muonlessVtx")) fChain->SetBranchAddress("Reco_QQ_mupl_dzErr_muonlessVtx", Reco_QQ_mupl_dzErr_muonlessVtx, &b_Reco_QQ_mupl_dzErr_muonlessVtx);
-  if (fChain->GetBranch("Reco_QQ_mumi_dzErr_muonlessVtx")) fChain->SetBranchAddress("Reco_QQ_mumi_dzErr_muonlessVtx", Reco_QQ_mumi_dzErr_muonlessVtx, &b_Reco_QQ_mumi_dzErr_muonlessVtx);
+  if (fChain->GetBranch("Reco_QQ_mupl_dxy_muonlessVtx")) fChain->SetBranchAddress("Reco_QQ_mupl_dxy_muonlessVtx", Reco_QQ_mupl_dxy_muonlessVtx
+, &b_Reco_QQ_mupl_dxy_muonlessVtx);
+  if (fChain->GetBranch("Reco_QQ_mumi_dxy_muonlessVtx")) fChain->SetBranchAddress("Reco_QQ_mumi_dxy_muonlessVtx", Reco_QQ_mumi_dxy_muonlessVtx
+, &b_Reco_QQ_mumi_dxy_muonlessVtx);
+  if (fChain->GetBranch("Reco_QQ_mupl_dxyErr_muonlessVtx")) fChain->SetBranchAddress("Reco_QQ_mupl_dxyErr_muonlessVtx", Reco_QQ_mupl_dxyErr_mu
+onlessVtx, &b_Reco_QQ_mupl_dxyErr_muonlessVtx);
+  if (fChain->GetBranch("Reco_QQ_mumi_dxyErr_muonlessVtx")) fChain->SetBranchAddress("Reco_QQ_mumi_dxyErr_muonlessVtx", Reco_QQ_mumi_dxyErr_mu
+onlessVtx, &b_Reco_QQ_mumi_dxyErr_muonlessVtx);
+  if (fChain->GetBranch("Reco_QQ_mupl_dz_muonlessVtx")) fChain->SetBranchAddress("Reco_QQ_mupl_dz_muonlessVtx", Reco_QQ_mupl_dz_muonlessVtx, &
+b_Reco_QQ_mupl_dz_muonlessVtx);
+  if (fChain->GetBranch("Reco_QQ_mumi_dz_muonlessVtx")) fChain->SetBranchAddress("Reco_QQ_mumi_dz_muonlessVtx", Reco_QQ_mumi_dz_muonlessVtx, &
+b_Reco_QQ_mumi_dz_muonlessVtx);
+  if (fChain->GetBranch("Reco_QQ_mupl_dzErr_muonlessVtx")) fChain->SetBranchAddress("Reco_QQ_mupl_dzErr_muonlessVtx", Reco_QQ_mupl_dzErr_muonl
+essVtx, &b_Reco_QQ_mupl_dzErr_muonlessVtx);
+  if (fChain->GetBranch("Reco_QQ_mumi_dzErr_muonlessVtx")) fChain->SetBranchAddress("Reco_QQ_mumi_dzErr_muonlessVtx", Reco_QQ_mumi_dzErr_muonl
+essVtx, &b_Reco_QQ_mumi_dzErr_muonlessVtx);
   if (fChain->GetBranch("Reco_mu_size")) fChain->SetBranchAddress("Reco_mu_size", &Reco_mu_size, &b_Reco_mu_size);
   if (fChain->GetBranch("Reco_mu_type")) fChain->SetBranchAddress("Reco_mu_type", Reco_mu_type, &b_Reco_mu_type);
   if (fChain->GetBranch("Reco_mu_whichGen")) fChain->SetBranchAddress("Reco_mu_whichGen", Reco_mu_whichGen, &b_Reco_mu_whichGen);
+  if (fChain->GetBranch("Reco_mu_SelectionType")) fChain->SetBranchAddress("Reco_mu_SelectionType", Reco_mu_SelectionType, &b_Reco_mu_Selectio
+nType);
   if (fChain->GetBranch("Reco_mu_charge")) fChain->SetBranchAddress("Reco_mu_charge", Reco_mu_charge, &b_Reco_mu_charge);
   if (fChain->GetBranch("Reco_mu_4mom")) fChain->SetBranchAddress("Reco_mu_4mom", &Reco_mu_4mom, &b_Reco_mu_4mom);
   if (fChain->GetBranch("Reco_mu_trig")) fChain->SetBranchAddress("Reco_mu_trig", Reco_mu_trig, &b_Reco_mu_trig);
   if (fChain->GetBranch("Reco_mu_highPurity")) fChain->SetBranchAddress("Reco_mu_highPurity", Reco_mu_highPurity, &b_Reco_mu_highPurity);
   if (fChain->GetBranch("Reco_mu_TrkMuArb")) fChain->SetBranchAddress("Reco_mu_TrkMuArb", Reco_mu_TrkMuArb, &b_Reco_mu_TrkMuArb);
-  if (fChain->GetBranch("Reco_mu_TMOneStaTight")) fChain->SetBranchAddress("Reco_mu_TMOneStaTight", Reco_mu_TMOneStaTight, &b_Reco_mu_TMOneStaTight);
+  if (fChain->GetBranch("Reco_mu_TMOneStaTight")) fChain->SetBranchAddress("Reco_mu_TMOneStaTight", Reco_mu_TMOneStaTight, &b_Reco_mu_TMOneSta
+Tight);
   if (fChain->GetBranch("Reco_mu_nPixValHits")) fChain->SetBranchAddress("Reco_mu_nPixValHits", Reco_mu_nPixValHits, &b_Reco_mu_nPixValHits);
   if (fChain->GetBranch("Reco_mu_nMuValHits")) fChain->SetBranchAddress("Reco_mu_nMuValHits", Reco_mu_nMuValHits, &b_Reco_mu_nMuValHits);
   if (fChain->GetBranch("Reco_mu_nTrkHits")) fChain->SetBranchAddress("Reco_mu_nTrkHits", Reco_mu_nTrkHits, &b_Reco_mu_nTrkHits);
-  if (fChain->GetBranch("Reco_mu_normChi2_inner")) fChain->SetBranchAddress("Reco_mu_normChi2_inner", Reco_mu_normChi2_inner, &b_Reco_mu_normChi2_inner);
-  if (fChain->GetBranch("Reco_mu_normChi2_global")) fChain->SetBranchAddress("Reco_mu_normChi2_global", Reco_mu_normChi2_global, &b_Reco_mu_normChi2_global);
+  if (fChain->GetBranch("Reco_mu_normChi2_inner")) fChain->SetBranchAddress("Reco_mu_normChi2_inner", Reco_mu_normChi2_inner, &b_Reco_mu_normC
+hi2_inner);
+  if (fChain->GetBranch("Reco_mu_normChi2_global")) fChain->SetBranchAddress("Reco_mu_normChi2_global", Reco_mu_normChi2_global, &b_Reco_mu_no
+rmChi2_global);
   if (fChain->GetBranch("Reco_mu_nPixWMea")) fChain->SetBranchAddress("Reco_mu_nPixWMea", Reco_mu_nPixWMea, &b_Reco_mu_nPixWMea);
   if (fChain->GetBranch("Reco_mu_nTrkWMea")) fChain->SetBranchAddress("Reco_mu_nTrkWMea", Reco_mu_nTrkWMea, &b_Reco_mu_nTrkWMea);
-  if (fChain->GetBranch("Reco_mu_StationsMatched")) fChain->SetBranchAddress("Reco_mu_StationsMatched", Reco_mu_StationsMatched, &b_Reco_mu_StationsMatched);
+  if (fChain->GetBranch("Reco_mu_StationsMatched")) fChain->SetBranchAddress("Reco_mu_StationsMatched", Reco_mu_StationsMatched, &b_Reco_mu_St
+ationsMatched);
   if (fChain->GetBranch("Reco_mu_dxy")) fChain->SetBranchAddress("Reco_mu_dxy", Reco_mu_dxy, &b_Reco_mu_dxy);
   if (fChain->GetBranch("Reco_mu_dxyErr")) fChain->SetBranchAddress("Reco_mu_dxyErr", Reco_mu_dxyErr, &b_Reco_mu_dxyErr);
   if (fChain->GetBranch("Reco_,u_dz")) fChain->SetBranchAddress("Reco_mu_dz", Reco_mu_dz, &b_Reco_mu_dz);
@@ -381,7 +386,8 @@ void myTree::Init(TTree *tree)
   if (fChain->GetBranch("Reco_mu_pt_inner")) fChain->SetBranchAddress("Reco_mu_pt_inner", Reco_mu_pt_inner, &b_Reco_mu_pt_inner);
   if (fChain->GetBranch("Reco_mu_pt_global")) fChain->SetBranchAddress("Reco_mu_pt_global", Reco_mu_pt_global, &b_Reco_mu_pt_global);
   if (fChain->GetBranch("Reco_mu_ptErr_inner")) fChain->SetBranchAddress("Reco_mu_ptErr_inner", Reco_mu_ptErr_inner, &b_Reco_mu_ptErr_inner);
-  if (fChain->GetBranch("Reco_mu_ptErr_global")) fChain->SetBranchAddress("Reco_mu_ptErr_global", Reco_mu_ptErr_global, &b_Reco_mu_ptErr_global);
+  if (fChain->GetBranch("Reco_mu_ptErr_global")) fChain->SetBranchAddress("Reco_mu_ptErr_global", Reco_mu_ptErr_global, &b_Reco_mu_ptErr_globa
+l);
   if (fChain->GetBranch("Gen_QQ_size")) fChain->SetBranchAddress("Gen_QQ_size", &Gen_QQ_size, &b_Gen_QQ_size);
   if (fChain->GetBranch("Gen_QQ_type")) fChain->SetBranchAddress("Gen_QQ_type", Gen_QQ_type, &b_Gen_QQ_type);
   if (fChain->GetBranch("Gen_QQ_4mom")) fChain->SetBranchAddress("Gen_QQ_4mom", &Gen_QQ_4mom, &b_Gen_QQ_4mom);
@@ -396,7 +402,9 @@ void myTree::Init(TTree *tree)
   if (fChain->GetBranch("Gen_mu_charge")) fChain->SetBranchAddress("Gen_mu_charge", Gen_mu_charge, &b_Gen_mu_charge);
   if (fChain->GetBranch("Gen_mu_4mom")) fChain->SetBranchAddress("Gen_mu_4mom", &Gen_mu_4mom, &b_Gen_mu_4mom);
   if (fChain->GetBranch("Gen_mu_whichRec")) fChain->SetBranchAddress("Gen_mu_whichRec", Gen_mu_whichRec, &b_Gen_mu_whichRec);
-  //fChain->SetBranchAddress("pthat", &pthat, &b_pthat);
+  if (fChain->GetBranch("hiBin")) fChain->SetBranchAddress("hiBin", &hiBin, &b_hiBin);
+  if (fChain->GetBranch("hiHF")) fChain->SetBranchAddress("hiHF", &hiHF, &b_hiHF);
+  if (fChain->GetBranch("pthat")) fChain->SetBranchAddress("pthat", &pthat, &b_pthat);
   Notify();
 }
 
@@ -436,9 +444,13 @@ Bool_t myTree::passQualityCuts2019 (Int_t iRecoMu)
 {
   
   if ( ! (Reco_mu_SelectionType[iRecoMu]&((ULong64_t)pow(2, 1))) ) return false; // require the muons to be global muons
+  // cout<<"1"<<endl;
   if ( ! (Reco_mu_SelectionType[iRecoMu]&((ULong64_t)pow(2, 3))) ) return false; // require the muons to be tracker muons
+  //cout<<"2"<<endl;
   if ( ! (Reco_mu_nTrkWMea[iRecoMu] > 5) ) return false;
+  //cout<<"3"<<endl;
   if ( ! (Reco_mu_nPixWMea[iRecoMu] > 0) ) return false;
+  //cout<<"4"<<endl;
   if ( ! (fabs(Reco_mu_dxy[iRecoMu]) < 0.3) ) return false;
   if ( ! (fabs(Reco_mu_dz[iRecoMu]) < 20.) ) return false;
   
@@ -453,6 +465,51 @@ Bool_t myTree::isTriggerMatch (Int_t iRecoMu, Int_t TriggerBit)
   return cond;
 };
 
+Int_t myTree::getMCHiBinFromhiHF(const Double_t hiHF) {
+  const Int_t nBins = 200; // table of bin edges
+  const Double_t binTable[nBins+1] = {0, 12.2187, 13.0371, 13.7674, 14.5129, 15.2603, 16.0086, 16.7623, 17.5335, 18.3283, 19.1596, 19.9989, 20
+.8532, 21.7297, 22.6773, 23.6313, 24.6208, 25.6155, 26.6585, 27.7223, 28.8632, 30.041, 31.2865, 32.5431, 33.8655, 35.2539, 36.6912, 38.2064, 3
+9.7876, 41.4818, 43.2416, 45.0605, 46.9652, 48.9918, 51.1, 53.2417, 55.5094, 57.9209, 60.3817, 62.9778, 65.6099, 68.4352, 71.3543, 74.4154, 77
+.6252, 80.8425, 84.1611, 87.7395, 91.3973, 95.1286, 99.0571, 103.185, 107.482, 111.929, 116.45, 121.178, 126.081, 130.995, 136.171, 141.612, 1
+47.298, 153.139, 159.419, 165.633, 172.114, 178.881, 185.844, 192.845, 200.244, 207.83, 215.529, 223.489, 231.878, 240.254, 249.319, 258.303, 
+267.508, 277.037, 286.729, 296.845, 307.458, 317.882, 328.787, 340.074, 351.295, 362.979, 375.125, 387.197, 399.604, 412.516, 425.683, 439.001
+, 452.667, 466.816, 481.007, 495.679, 510.588, 526.138, 541.782, 557.641, 574.141, 591.071, 608.379, 626.068, 643.616, 661.885, 680.288, 699.4
+49, 718.925, 738.968, 758.983, 779.459, 800.376, 821.638, 843.555, 865.771, 888.339, 911.031, 934.979, 958.56, 982.582, 1007.02, 1031.9, 1057.
+81, 1084.01, 1111.71, 1138.21, 1165.72, 1193.73, 1221.65, 1251.51, 1281.23, 1311.01, 1341.1, 1372.4, 1404.29, 1436.52, 1468.65, 1501.91, 1535.
+56, 1569.69, 1604.69, 1640.65, 1676.05, 1712.62, 1749.28, 1787.43, 1825.89, 1866.07, 1906.58, 1947.84, 1989.66, 2031.4, 2072.8, 2115.32, 2159.
+5, 2205.23, 2252.68, 2298.58, 2345.65, 2393.36, 2442.87, 2491.45, 2541.04, 2592.81, 2645.52, 2699.1, 2753.29, 2807.93, 2864.37, 2922.6, 2979.4
+2, 3038.68, 3098.72, 3159.29, 3221.66, 3285.9, 3350.95, 3415.81, 3482.69, 3552.62, 3623.61, 3694.63, 3767.25, 3840.28, 3917.04, 3993.66, 4073.
+36, 4154.33, 4238.13, 4322.21, 4409.83, 4498.89, 4589.72, 4681.56, 4777.09, 4877.95, 4987.05, 5113.04, 5279.58, 6242.82};
+  
+  Int_t binPos = -1;
+  for(int i = 0; i < nBins; ++i){
+    if(hiHF >= binTable[i] && hiHF < binTable[i+1]){
+      binPos = i;
+      break;
+    }
+  }
+  binPos = nBins - 1 - binPos;
+  return (Int_t)(200*((Double_t)binPos)/((Double_t)nBins));
+}
 
+Double_t myTree::findNcoll(int hiBin) {
+  const int nbins = 200;
+  const Double_t Ncoll[nbins] = {1976.95, 1944.02, 1927.29, 1891.9, 1845.3, 1807.2, 1760.45, 1729.18, 1674.8, 1630.3, 1590.52, 1561.72, 1516.1
+, 1486.5, 1444.68, 1410.88, 1376.4, 1347.32, 1309.71, 1279.98, 1255.31, 1219.89, 1195.13, 1165.96, 1138.92, 1113.37, 1082.26, 1062.42, 1030.6,
+ 1009.96, 980.229, 955.443, 936.501, 915.97, 892.063, 871.289, 847.364, 825.127, 806.584, 789.163, 765.42, 751.187, 733.001, 708.31, 690.972, 
+677.711, 660.682, 640.431, 623.839, 607.456, 593.307, 576.364, 560.967, 548.909, 530.475, 519.575, 505.105, 490.027, 478.133, 462.372, 451.115
+, 442.642, 425.76, 416.364, 405.154, 392.688, 380.565, 371.167, 360.28, 348.239, 340.587, 328.746, 320.268, 311.752, 300.742, 292.172, 281.361
+, 274.249, 267.025, 258.625, 249.931, 240.497, 235.423, 228.63, 219.854, 214.004, 205.425, 199.114, 193.618, 185.644, 180.923, 174.289, 169.64
+1, 161.016, 157.398, 152.151, 147.425, 140.933, 135.924, 132.365, 127.017, 122.127, 117.817, 113.076, 109.055, 105.16, 101.323, 98.098, 95.054
+8, 90.729, 87.6495, 84.0899, 80.2237, 77.2201, 74.8848, 71.3554, 68.7745, 65.9911, 63.4136, 61.3859, 58.1903, 56.4155, 53.8486, 52.0196, 49.29
+21, 47.0735, 45.4345, 43.8434, 41.7181, 39.8988, 38.2262, 36.4435, 34.8984, 33.4664, 31.8056, 30.351, 29.2074, 27.6924, 26.7754, 25.4965, 24.2
+802, 22.9651, 22.0059, 21.0915, 19.9129, 19.1041, 18.1487, 17.3218, 16.5957, 15.5323, 14.8035, 14.2514, 13.3782, 12.8667, 12.2891, 11.61, 11.0
+026, 10.3747, 9.90294, 9.42648, 8.85324, 8.50121, 7.89834, 7.65197, 7.22768, 6.7755, 6.34855, 5.98336, 5.76555, 5.38056, 5.11024, 4.7748, 4.59
+117, 4.23247, 4.00814, 3.79607, 3.68702, 3.3767, 3.16309, 2.98282, 2.8095, 2.65875, 2.50561, 2.32516, 2.16357, 2.03235, 1.84061, 1.72628, 1.62
+305, 1.48916, 1.38784, 1.28366, 1.24693, 1.18552, 1.16085, 1.12596, 1.09298, 1.07402, 1.06105, 1.02954};
+  return Ncoll[hiBin];
+};
 
 #endif // #ifdef myTree_cxx
+-bash-4.2$   
+
